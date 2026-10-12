@@ -1,0 +1,34 @@
+# Fails a pull request if any of its commit messages still carries AI-tool
+# attribution (covers commits made without the local hook, e.g. in the web UI).
+# Use from another repo:
+#   jobs:
+#     hygiene:
+#       uses: vbs-0/commit-hygiene/.github/workflows/check-commits.yml@main
+name: check-commits
+on:
+  workflow_call:
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Fetch the hook
+        run: |
+          if [ ! -f hooks/commit-msg ]; then
+            curl -fsSL https://raw.githubusercontent.com/vbs-0/commit-hygiene/main/hooks/commit-msg -o /tmp/commit-msg
+          else cp hooks/commit-msg /tmp/commit-msg; fi
+      - name: Check commit messages
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bad=0
+          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            git log -1 --format=%B "$c" > /tmp/msg
+            if ! sh /tmp/commit-msg --check /tmp/msg; then
+              echo "::error::commit $c carries AI attribution: $(git log -1 --format=%s "$c")"; bad=1
+            fi
+          done
+          exit $bad
